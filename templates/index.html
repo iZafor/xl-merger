@@ -8,18 +8,60 @@
             href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
             rel="stylesheet"
         />
+        <style>
+            body {
+                background-color: #f6f8fb;
+            }
+            .container {
+                max-width: 960px;
+            }
+            .avg-row {
+                background-color: #fff3cd !important;
+                font-weight: 600;
+            }
+            .separator-row td {
+                background-color: #f8f9fa;
+            }
+            #fileList .list-group-item {
+                cursor: grab;
+            }
+            #fileList .list-group-item:active {
+                cursor: grabbing;
+            }
+            /* Make pandas preview table look nicer */
+            table.dataframe {
+                width: 100%;
+            }
+            table.dataframe th,
+            table.dataframe td {
+                padding: 0.5rem 0.75rem;
+                border-color: #dee2e6;
+            }
+        </style>
     </head>
     <body class="bg-light">
+        <nav class="navbar bg-white border-bottom mb-4">
+            <div class="container">
+                <span class="navbar-brand mb-0 h1">Excel Merger</span>
+            </div>
+        </nav>
         <div class="container py-5">
-            <h1 class="mb-4">Excel Merger</h1>
-
             {% with messages = get_flashed_messages() %} {% if messages %}
-            <div class="alert alert-warning">
+            <div
+                class="alert alert-warning alert-dismissible fade show"
+                role="alert"
+            >
                 <ul class="mb-0">
                     {% for m in messages %}
                     <li>{{ m }}</li>
                     {% endfor %}
                 </ul>
+                <button
+                    type="button"
+                    class="btn-close"
+                    data-bs-dismiss="alert"
+                    aria-label="Close"
+                ></button>
             </div>
             {% endif %} {% endwith %}
 
@@ -43,6 +85,21 @@
                     <div class="form-text">
                         You can select multiple files; they will be merged in
                         the order chosen.
+                    </div>
+                </div>
+
+                <div
+                    class="mb-3"
+                    id="file-order-container"
+                    style="display: none"
+                >
+                    <label class="form-label"
+                        >Reorder files (drag to arrange)</label
+                    >
+                    <ul id="fileList" class="list-group"></ul>
+                    <div class="form-text">
+                        Drag items to change order. The merge will follow this
+                        exact order.
                     </div>
                 </div>
 
@@ -113,5 +170,116 @@
                 will be concatenated row-wise into a single sheet.
             </p>
         </div>
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+        <script>
+            // Highlight Average and separator rows within the preview (client-side only)
+            (function highlightPreview() {
+                const table = document.querySelector("table.dataframe");
+                if (!table) return;
+                const rows = table.querySelectorAll("tbody tr");
+                rows.forEach((tr) => {
+                    const tds = Array.from(tr.children);
+                    if (
+                        tds.some(
+                            (td) => (td.textContent || "").trim() === "Average"
+                        )
+                    ) {
+                        tr.classList.add("avg-row");
+                    }
+                    if (
+                        tds.length &&
+                        tds.every((td) => (td.textContent || "").trim() === "")
+                    ) {
+                        tr.classList.add("separator-row");
+                    }
+                });
+            })();
+            (function () {
+                const fileInput = document.getElementById("files");
+                const container = document.getElementById(
+                    "file-order-container"
+                );
+                const list = document.getElementById("fileList");
+                const form = document.querySelector('form[method="post"]');
+                const labelsArea = document.getElementById("group_texts");
+
+                let currentFiles = [];
+                let dragIndex = null;
+
+                function renderList() {
+                    list.innerHTML = "";
+                    currentFiles.forEach((f, idx) => {
+                        const li = document.createElement("li");
+                        li.className =
+                            "list-group-item d-flex align-items-center justify-content-between";
+                        li.draggable = true;
+                        li.dataset.index = idx;
+                        li.innerHTML = `<span class="text-truncate" style="max-width: 80%;">${f.name}</span><span class="text-muted small">↕</span>`;
+                        li.addEventListener("dragstart", (e) => {
+                            dragIndex = Number(li.dataset.index);
+                            e.dataTransfer.effectAllowed = "move";
+                        });
+                        li.addEventListener("dragover", (e) => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = "move";
+                        });
+                        li.addEventListener("drop", (e) => {
+                            e.preventDefault();
+                            const targetIndex = Number(li.dataset.index);
+                            if (dragIndex === null || dragIndex === targetIndex)
+                                return;
+                            const moved = currentFiles.splice(dragIndex, 1)[0];
+                            currentFiles.splice(targetIndex, 0, moved);
+                            renderList();
+                        });
+                        list.appendChild(li);
+                    });
+                    container.style.display =
+                        currentFiles.length > 1 ? "" : "none";
+                }
+
+                fileInput.addEventListener("change", () => {
+                    currentFiles = Array.from(fileInput.files);
+                    renderList();
+                    updateLabelCountHint();
+                });
+
+                form.addEventListener("submit", (e) => {
+                    // Ensure the input's FileList reflects the reordered files
+                    if (currentFiles.length > 0) {
+                        try {
+                            const dt = new DataTransfer();
+                            currentFiles.forEach((f) => dt.items.add(f));
+                            fileInput.files = dt.files;
+                        } catch (err) {
+                            // Fallback: if DataTransfer is not supported, proceed with original order
+                            console.warn("Could not reorder FileList:", err);
+                        }
+                    }
+                });
+
+                // Soft hint: highlight helper text if labels count doesn't match files count
+                function updateLabelCountHint() {
+                    if (!labelsArea) return;
+                    const lines = (labelsArea.value || "")
+                        .split(/\r?\n/)
+                        .filter(() => true).length;
+                    const hint =
+                        labelsArea.parentElement.querySelector(".form-text");
+                    if (!hint) return;
+                    if (currentFiles.length && lines !== currentFiles.length) {
+                        hint.classList.add("text-warning");
+                        hint.classList.remove("text-muted");
+                    } else {
+                        hint.classList.remove("text-warning");
+                        hint.classList.add("text-muted");
+                    }
+                }
+                if (labelsArea) {
+                    labelsArea.addEventListener("input", updateLabelCountHint);
+                }
+                updateLabelCountHint();
+            })();
+        </script>
     </body>
 </html>

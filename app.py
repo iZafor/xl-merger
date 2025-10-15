@@ -2,7 +2,9 @@ from flask import Flask, render_template, request, send_file, redirect, url_for,
 import pandas as pd
 import os
 import uuid
+import time
 from pathlib import Path
+from datetime import datetime, timezone
 from werkzeug.utils import secure_filename
 from openpyxl import load_workbook
 
@@ -13,9 +15,50 @@ ALLOWED_EXTENSIONS = {'xls', 'xlsx', 'csv'}
 TMP_DIR = Path(app.root_path) / 'tmp'
 TMP_DIR.mkdir(exist_ok=True)
 
+# Cleanup configuration
+TMP_RETENTION_SECONDS = int(os.environ.get('TMP_RETENTION_SECONDS', str(6 * 60 * 60)))  # default: 6 hours
+TMP_CLEANUP_INTERVAL_SECONDS = int(os.environ.get('TMP_CLEANUP_INTERVAL_SECONDS', str(30 * 60)))  # default: 30 minutes
+_LAST_TMP_CLEANUP = 0.0
+
 
 def allowed_file(filename: str) -> bool:
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def cleanup_tmp_dir(now: float | None = None) -> int:
+    """Delete files in TMP_DIR older than TMP_RETENTION_SECONDS.
+
+    Returns number of files deleted.
+    """
+    ts_now = now if now is not None else time.time()
+    deleted = 0
+    try:
+        for p in TMP_DIR.glob('merged-*.xlsx'):
+            try:
+                mtime = p.stat().st_mtime
+            except FileNotFoundError:
+                continue
+            if ts_now - mtime > TMP_RETENTION_SECONDS:
+                try:
+                    p.unlink(missing_ok=True)
+                    deleted += 1
+                except Exception as e:
+                    # Non-fatal; log and continue
+                    app.logger.debug(f"Could not delete tmp file {p}: {e}")
+    except Exception as e:
+        app.logger.warning(f"tmp cleanup scan failed: {e}")
+    if deleted:
+        app.logger.info(f"tmp cleanup removed {deleted} old file(s)")
+    return deleted
+
+
+@app.before_request
+def _maybe_cleanup_tmp():
+    global _LAST_TMP_CLEANUP
+    now = time.time()
+    if now - _LAST_TMP_CLEANUP >= TMP_CLEANUP_INTERVAL_SECONDS:
+        _LAST_TMP_CLEANUP = now
+        cleanup_tmp_dir(now)
 
 
 @app.route('/', methods=['GET', 'POST'])
