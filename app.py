@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from werkzeug.utils import secure_filename
 from openpyxl import load_workbook, Workbook
-from openpyxl.styles import Alignment
+from openpyxl.styles import Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 from typing import Any
 
@@ -370,6 +370,23 @@ def index():
                     excel_end = end_idx + 2
                     if excel_start <= excel_end:
                         ws.merge_cells(start_row=excel_start, start_column=1, end_row=excel_end, end_column=1)
+            # Apply light yellow background to Average rows and merged group cells
+            try:
+                yellow = PatternFill(start_color='FFFFF3CD', end_color='FFFFF3CD', fill_type='solid')
+                # Average rows: any row containing 'Average'
+                for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+                    if any((cell.value == 'Average') for cell in row):
+                        for cell in row:
+                            cell.fill = yellow
+                # Merged group cells (first column ranges)
+                if use_group_col and merge_ranges:
+                    for (start_idx, end_idx) in merge_ranges:
+                        excel_start = start_idx + 2
+                        excel_end = end_idx + 2
+                        # Set fill on the top-left cell of the merged area
+                        ws.cell(row=excel_start, column=1).fill = yellow
+            except Exception:
+                pass
             # Center align all cells
             try:
                 center = Alignment(horizontal='center', vertical='center')
