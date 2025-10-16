@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from datetime import datetime, timezone
 from werkzeug.utils import secure_filename
-from openpyxl import load_workbook
+from openpyxl import load_workbook, Workbook
 from typing import Any
 
 app = Flask(__name__)
@@ -127,8 +127,8 @@ def index():
         running_total = 0
         first_cols: list[str] | None = None  # for position alignment
 
-        # For separate sheets, collect (name, df) pairs
-        per_sheet: list[tuple[str, pd.DataFrame]] = []
+        # For separate sheets, collect (name, df, file, ext)
+        per_sheet: list[tuple[str, pd.DataFrame, Any, str]] = []
         default_sheet_bases: list[str] = []
 
         for i, file in enumerate(files):
@@ -201,37 +201,70 @@ def index():
                 # collect regardless
                 dfs.append(df)
             else:
-                # Separate sheets: append Average row when data exists, no group column or empty separator
-                if n_data > 0:
-                    avg_row: dict[str, Any] = {original_cols[0]: 'Average'}
-                    for c in original_cols[1:]:
-                        numeric = pd.to_numeric(df[c], errors='coerce')
-                        mean_val = numeric.mean()
-                        avg_row[c] = '' if pd.isna(mean_val) else mean_val
-                    avg_df = pd.DataFrame([avg_row], columns=original_cols)
-                    df = pd.concat([df, avg_df], ignore_index=True)
+                # Separate sheets: write data as-is (no Average row, no group column)
                 dfs.append(df)  # keep for potential uniform preview handling
                 default_sheet_bases.append(Path(filename).stem or f'Sheet{i+1}')
-                per_sheet.append((filename, df))
+                ext = Path(filename).suffix.lower()
+                per_sheet.append((filename, df, file, ext))
 
         if output_mode == 'sheets':
             # Sanitize and finalize sheet names
             sheet_names = sanitize_sheet_names(default_sheet_bases)
 
-            # Write to Excel with multiple sheets
+            # Write to Excel with multiple sheets, preserving merges for .xlsx sources
             unique_name = f'merged-{uuid.uuid4().hex}.xlsx'
             out_path = TMP_DIR / unique_name
             try:
-                with pd.ExcelWriter(out_path, engine='openpyxl') as writer:
-                    for idx, (_, df) in enumerate(per_sheet):
-                        df.to_excel(writer, index=False, sheet_name=sheet_names[idx])
+                wb_out = Workbook()
+                # Remove default sheet if present and empty
+                if wb_out.active and wb_out.active.max_row == 1 and wb_out.active.max_column == 1 and wb_out.active['A1'].value is None:
+                    wb_out.remove(wb_out.active)
+
+                for idx, (orig_name, df, uploaded_file, ext) in enumerate(per_sheet):
+                    sheet_name = sheet_names[idx]
+                    if ext == '.xlsx':
+                        try:
+                            # Reset stream and load source workbook
+                            if hasattr(uploaded_file, 'stream'):
+                                uploaded_file.stream.seek(0)
+                            wb_src = load_workbook(uploaded_file.stream, data_only=True)
+                            ws_src = getattr(wb_src, 'active', None)
+                            ws_dest = wb_out.create_sheet(title=sheet_name)
+                            if ws_src is not None and hasattr(ws_src, 'iter_rows') and hasattr(ws_src, 'merged_cells'):
+                                # Copy values
+                                for r in ws_src.iter_rows(values_only=False):
+                                    for cell in r:
+                                        ws_dest.cell(row=cell.row, column=cell.column, value=cell.value)
+                                # Reapply merged ranges
+                                for mcr in ws_src.merged_cells.ranges:
+                                    ws_dest.merge_cells(range_string=str(mcr.coord))
+                            else:
+                                # Fallback to DataFrame values
+                                ws_dest.append(list(df.columns))
+                                for _, row in df.iterrows():
+                                    ws_dest.append([row.get(c, '') for c in df.columns])
+                        except Exception as e:
+                            # Fallback: write values from DataFrame if anything fails
+                            ws_dest = wb_out.create_sheet(title=sheet_name)
+                            # Write headers
+                            ws_dest.append(list(df.columns))
+                            for _, row in df.iterrows():
+                                ws_dest.append([row.get(c, '') for c in df.columns])
+                    else:
+                        # CSV or other: write values from DataFrame
+                        ws_dest = wb_out.create_sheet(title=sheet_name)
+                        ws_dest.append(list(df.columns))
+                        for _, row in df.iterrows():
+                            ws_dest.append([row.get(c, '') for c in df.columns])
+
+                wb_out.save(out_path)
             except Exception as e:
                 flash(f'Error writing output file: {e}')
                 return redirect(request.url)
 
             # Build previews
             sheet_previews = []
-            for idx, (_, df) in enumerate(per_sheet):
+            for idx, (_, df, _, _) in enumerate(per_sheet):
                 html = df.to_html(classes='table table-striped table-sm', index=False, escape=False)
                 sheet_previews.append({
                     'name': sheet_names[idx],
