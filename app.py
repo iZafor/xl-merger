@@ -7,6 +7,8 @@ from pathlib import Path
 from datetime import datetime, timezone
 from werkzeug.utils import secure_filename
 from openpyxl import load_workbook, Workbook
+from openpyxl.styles import Alignment
+from openpyxl.utils import get_column_letter
 from typing import Any
 
 app = Flask(__name__)
@@ -123,6 +125,34 @@ def index():
                 used.add(cleaned)
                 result.append(cleaned)
             return result
+
+        def autosize_columns(ws) -> None:
+            """Set column widths to fit the longest cell content (approx), with padding and bounds."""
+            try:
+                max_col = ws.max_column or 0
+                max_row = ws.max_row or 0
+                if max_col == 0 or max_row == 0:
+                    return
+                for col_idx in range(1, max_col + 1):
+                    max_len = 0
+                    for row_idx in range(1, max_row + 1):
+                        v = ws.cell(row=row_idx, column=col_idx).value
+                        if v is None:
+                            continue
+                        s = str(v)
+                        for line in s.splitlines() or [s]:
+                            if len(line) > max_len:
+                                max_len = len(line)
+                    # Apply padding and bounds
+                    width = max_len + 2
+                    if width < 10:
+                        width = 10
+                    if width > 60:
+                        width = 60
+                    ws.column_dimensions[get_column_letter(col_idx)].width = width
+            except Exception:
+                # Non-fatal; ignore autosize errors
+                pass
 
         dfs = []
         merge_ranges = []  # tuples of (start_idx, end_idx) for data rows per file in merged DF (0-based)
@@ -248,6 +278,15 @@ def index():
                             # Freeze first row and first column
                             if freeze_panes:
                                 ws_dest.freeze_panes = 'B2'
+                            # Center align all cells
+                            try:
+                                center = Alignment(horizontal='center', vertical='center')
+                                for r in ws_dest.iter_rows(min_row=1, max_row=ws_dest.max_row, min_col=1, max_col=ws_dest.max_column):
+                                    for cell in r:
+                                        cell.alignment = center
+                                autosize_columns(ws_dest)
+                            except Exception:
+                                pass
                         except Exception as e:
                             # Fallback: write values from DataFrame if anything fails
                             ws_dest = wb_out.create_sheet(title=sheet_name)
@@ -257,6 +296,14 @@ def index():
                                 ws_dest.append([row.get(c, '') for c in df.columns])
                             if freeze_panes:
                                 ws_dest.freeze_panes = 'B2'
+                            try:
+                                center = Alignment(horizontal='center', vertical='center')
+                                for r in ws_dest.iter_rows(min_row=1, max_row=ws_dest.max_row, min_col=1, max_col=ws_dest.max_column):
+                                    for cell in r:
+                                        cell.alignment = center
+                                autosize_columns(ws_dest)
+                            except Exception:
+                                pass
                     else:
                         # CSV or other: write values from DataFrame
                         ws_dest = wb_out.create_sheet(title=sheet_name)
@@ -265,6 +312,14 @@ def index():
                             ws_dest.append([row.get(c, '') for c in df.columns])
                         if freeze_panes:
                             ws_dest.freeze_panes = 'B2'
+                        try:
+                            center = Alignment(horizontal='center', vertical='center')
+                            for r in ws_dest.iter_rows(min_row=1, max_row=ws_dest.max_row, min_col=1, max_col=ws_dest.max_column):
+                                for cell in r:
+                                    cell.alignment = center
+                            autosize_columns(ws_dest)
+                        except Exception:
+                            pass
 
                 wb_out.save(out_path)
             except Exception as e:
@@ -315,6 +370,15 @@ def index():
                     excel_end = end_idx + 2
                     if excel_start <= excel_end:
                         ws.merge_cells(start_row=excel_start, start_column=1, end_row=excel_end, end_column=1)
+            # Center align all cells
+            try:
+                center = Alignment(horizontal='center', vertical='center')
+                for r in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+                    for cell in r:
+                        cell.alignment = center
+                autosize_columns(ws)
+            except Exception:
+                pass
             wb.save(out_path)
         except Exception as e:
             flash(f'Warning: could not finalize Excel formatting: {e}')
