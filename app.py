@@ -78,6 +78,8 @@ def index():
         output_mode = (request.form.get('output_mode') or 'single').strip()
         # Alignment mode (single-sheet only): 'position' (default) or 'names'
         align_mode = (request.form.get('align_mode') or 'position').strip()
+        # Freeze panes toggle: default ON, but if unchecked the field is absent on POST
+        freeze_panes = ('freeze_panes' in request.form)
 
         # Parse per-file labels and custom column title (single-sheet mode only)
         raw_labels = request.form.get('group_texts', '')
@@ -243,6 +245,9 @@ def index():
                                 ws_dest.append(list(df.columns))
                                 for _, row in df.iterrows():
                                     ws_dest.append([row.get(c, '') for c in df.columns])
+                            # Freeze first row and first column
+                            if freeze_panes:
+                                ws_dest.freeze_panes = 'B2'
                         except Exception as e:
                             # Fallback: write values from DataFrame if anything fails
                             ws_dest = wb_out.create_sheet(title=sheet_name)
@@ -250,12 +255,16 @@ def index():
                             ws_dest.append(list(df.columns))
                             for _, row in df.iterrows():
                                 ws_dest.append([row.get(c, '') for c in df.columns])
+                            if freeze_panes:
+                                ws_dest.freeze_panes = 'B2'
                     else:
                         # CSV or other: write values from DataFrame
                         ws_dest = wb_out.create_sheet(title=sheet_name)
                         ws_dest.append(list(df.columns))
                         for _, row in df.iterrows():
                             ws_dest.append([row.get(c, '') for c in df.columns])
+                        if freeze_panes:
+                            ws_dest.freeze_panes = 'B2'
 
                 wb_out.save(out_path)
             except Exception as e:
@@ -292,19 +301,23 @@ def index():
             flash(f'Error writing output file: {e}')
             return redirect(request.url)
 
-        # Merge first column cells for labeled ranges (single-sheet only)
-        if use_group_col and merge_ranges:
-            try:
-                wb = load_workbook(out_path)
-                ws = wb['Merged']
+        # Apply freeze panes and (optionally) merge labeled ranges in single-sheet output
+        try:
+            wb = load_workbook(out_path)
+            ws = wb['Merged']
+            # Freeze first row and first column
+            if freeze_panes:
+                ws.freeze_panes = 'B2'
+            # Merge first column cells for labeled ranges (single-sheet only)
+            if use_group_col and merge_ranges:
                 for (start_idx, end_idx) in merge_ranges:
                     excel_start = start_idx + 2  # header row + 1-based indexing
                     excel_end = end_idx + 2
                     if excel_start <= excel_end:
                         ws.merge_cells(start_row=excel_start, start_column=1, end_row=excel_end, end_column=1)
-                wb.save(out_path)
-            except Exception as e:
-                flash(f'Warning: could not merge group cells in Excel: {e}')
+            wb.save(out_path)
+        except Exception as e:
+            flash(f'Warning: could not finalize Excel formatting: {e}')
 
         # Render preview
         merged_html = merged.to_html(classes='table table-striped table-sm', index=False, escape=False)

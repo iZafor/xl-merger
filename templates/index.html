@@ -124,6 +124,22 @@
                     </div>
                 </div>
 
+                <div class="mb-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox"
+                        id="freeze_panes" name="freeze_panes" value="1" {{
+                        'checked' if request.form.get('freeze_panes', '1') else
+                        '' }}>
+                        <label class="form-check-label" for="freeze_panes"
+                            >Freeze first row and first column</label
+                        >
+                    </div>
+                    <div class="form-text">
+                        When enabled, all output sheets will have row 1 and
+                        column A frozen.
+                    </div>
+                </div>
+
                 <div class="mb-3" id="align_mode_block">
                     <label class="form-label"
                         >Column alignment (single sheet)</label
