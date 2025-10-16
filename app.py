@@ -9,6 +9,7 @@ from werkzeug.utils import secure_filename
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Alignment, PatternFill
 from openpyxl.utils import get_column_letter
+from copy import copy as copy_style
 from typing import Any
 
 app = Flask(__name__)
@@ -263,10 +264,26 @@ def index():
                             ws_src = getattr(wb_src, 'active', None)
                             ws_dest = wb_out.create_sheet(title=sheet_name)
                             if ws_src is not None and hasattr(ws_src, 'iter_rows') and hasattr(ws_src, 'merged_cells'):
-                                # Copy values
+                                # Copy values and styles
                                 for r in ws_src.iter_rows(values_only=False):
                                     for cell in r:
-                                        ws_dest.cell(row=cell.row, column=cell.column, value=cell.value)
+                                        dcell = ws_dest.cell(row=cell.row, column=cell.column, value=cell.value)
+                                        try:
+                                            if getattr(cell, 'font', None) is not None:
+                                                dcell.font = copy_style(cell.font)
+                                            if getattr(cell, 'fill', None) is not None:
+                                                dcell.fill = copy_style(cell.fill)
+                                            if getattr(cell, 'border', None) is not None:
+                                                dcell.border = copy_style(cell.border)
+                                            if getattr(cell, 'alignment', None) is not None:
+                                                dcell.alignment = copy_style(cell.alignment)
+                                            if getattr(cell, 'number_format', None) is not None:
+                                                dcell.number_format = cell.number_format
+                                            if getattr(cell, 'protection', None) is not None:
+                                                dcell.protection = copy_style(cell.protection)
+                                        except Exception:
+                                            # Non-fatal style copy failure; continue with values
+                                            pass
                                 # Reapply merged ranges
                                 for mcr in ws_src.merged_cells.ranges:
                                     ws_dest.merge_cells(range_string=str(mcr.coord))
