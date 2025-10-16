@@ -203,9 +203,12 @@ def index():
                         for extra_col in first_cols[taken:]:
                             pos_aligned[extra_col] = ''
                         df = pos_aligned[first_cols]
-                        # Align avg_df to first_cols
-                        row = {c: (avg_df[c].iloc[0] if c in avg_df.columns else '') for c in first_cols}
-                        avg_df = pd.DataFrame([row], columns=first_cols)
+                        # Align avg_df to first_cols by POSITION (not by name)
+                        avg_row_aligned: dict[str, Any] = {c: '' for c in first_cols}
+                        for j in range(taken):
+                            val = avg_df.iloc[0, j]
+                            avg_row_aligned[first_cols[j]] = ('' if pd.isna(val) else val)
+                        avg_df = pd.DataFrame([avg_row_aligned], columns=first_cols)
 
                     # Insert group column if needed (after alignment)
                     if use_group_col:
@@ -290,8 +293,8 @@ def index():
                             else:
                                 # Fallback to DataFrame values
                                 ws_dest.append(list(df.columns))
-                                for _, row in df.iterrows():
-                                    ws_dest.append([row.get(c, '') for c in df.columns])
+                                for _, s in df.iterrows():
+                                    ws_dest.append([s.get(c, '') for c in df.columns])
                             # Freeze first row and first column
                             if freeze_panes:
                                 ws_dest.freeze_panes = 'B2'
@@ -309,8 +312,8 @@ def index():
                             ws_dest = wb_out.create_sheet(title=sheet_name)
                             # Write headers
                             ws_dest.append(list(df.columns))
-                            for _, row in df.iterrows():
-                                ws_dest.append([row.get(c, '') for c in df.columns])
+                            for _, s in df.iterrows():
+                                ws_dest.append([s.get(c, '') for c in df.columns])
                             if freeze_panes:
                                 ws_dest.freeze_panes = 'B2'
                             try:
@@ -325,8 +328,8 @@ def index():
                         # CSV or other: write values from DataFrame
                         ws_dest = wb_out.create_sheet(title=sheet_name)
                         ws_dest.append(list(df.columns))
-                        for _, row in df.iterrows():
-                            ws_dest.append([row.get(c, '') for c in df.columns])
+                        for _, s in df.iterrows():
+                            ws_dest.append([s.get(c, '') for c in df.columns])
                         if freeze_panes:
                             ws_dest.freeze_panes = 'B2'
                         try:
@@ -391,9 +394,9 @@ def index():
             try:
                 yellow = PatternFill(start_color='FFFFF3CD', end_color='FFFFF3CD', fill_type='solid')
                 # Average rows: any row containing 'Average'
-                for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
-                    if any((cell.value == 'Average') for cell in row):
-                        for cell in row:
+                for cells in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+                    if any((cell.value == 'Average') for cell in cells):
+                        for cell in cells:
                             cell.fill = yellow
                 # Merged group cells (first column ranges)
                 if use_group_col and merge_ranges:
