@@ -76,6 +76,8 @@ def index():
 
         # Output mode: 'single' (default) or 'sheets'
         output_mode = (request.form.get('output_mode') or 'single').strip()
+        # Alignment mode (single-sheet only): 'position' (default) or 'names'
+        align_mode = (request.form.get('align_mode') or 'position').strip()
 
         # Parse per-file labels and custom column title (single-sheet mode only)
         raw_labels = request.form.get('group_texts', '')
@@ -123,6 +125,7 @@ def index():
         dfs = []
         merge_ranges = []  # tuples of (start_idx, end_idx) for data rows per file in merged DF (0-based)
         running_total = 0
+        first_cols: list[str] | None = None  # for position alignment
 
         # For separate sheets, collect (name, df) pairs
         per_sheet: list[tuple[str, pd.DataFrame]] = []
@@ -147,24 +150,38 @@ def index():
             n_data = len(df)
             original_cols = list(df.columns)
 
-            if n_data > 0:
-                # Build Average row using original columns
-                avg_row: dict[str, Any] = {original_cols[0]: 'Average'}
-                for c in original_cols[1:]:
-                    numeric = pd.to_numeric(df[c], errors='coerce')
-                    mean_val = numeric.mean()
-                    avg_row[c] = '' if pd.isna(mean_val) else mean_val
-                avg_df = pd.DataFrame([avg_row], columns=original_cols)
+            if output_mode == 'single':
+                if n_data > 0:
+                    # Build Average row using original columns
+                    avg_row: dict[str, Any] = {original_cols[0]: 'Average'}
+                    for c in original_cols[1:]:
+                        numeric = pd.to_numeric(df[c], errors='coerce')
+                        mean_val = numeric.mean()
+                        avg_row[c] = '' if pd.isna(mean_val) else mean_val
+                    avg_df = pd.DataFrame([avg_row], columns=original_cols)
 
-                if output_mode == 'single':
-                    # Insert group column if needed (always insert to keep columns aligned across files)
+                    # Position-based alignment to first non-empty file's columns
+                    if align_mode == 'position':
+                        if first_cols is None:
+                            first_cols = original_cols.copy()
+                        taken = min(len(original_cols), len(first_cols))
+                        pos_aligned = df.iloc[:, :taken].copy()
+                        pos_aligned.columns = first_cols[:taken]
+                        for extra_col in first_cols[taken:]:
+                            pos_aligned[extra_col] = ''
+                        df = pos_aligned[first_cols]
+                        # Align avg_df to first_cols
+                        row = {c: (avg_df[c].iloc[0] if c in avg_df.columns else '') for c in first_cols}
+                        avg_df = pd.DataFrame([row], columns=first_cols)
+
+                    # Insert group column if needed (after alignment)
                     if use_group_col:
                         label = labels[i] if i < len(labels) else ''
                         df.insert(0, group_col_title, label)
                         avg_df.insert(0, group_col_title, '')
-                        cols_after = [group_col_title] + original_cols
+                        cols_after = [group_col_title] + (first_cols if (align_mode == 'position' and first_cols is not None) else original_cols)
                     else:
-                        cols_after = original_cols
+                        cols_after = (first_cols if (align_mode == 'position' and first_cols is not None) else original_cols)
 
                     # Record merge range for this file's data rows if it has a label
                     if use_group_col and (labels[i] if i < len(labels) else '') and n_data > 0:
@@ -181,18 +198,21 @@ def index():
                         df = pd.concat([df, avg_df], ignore_index=True)
 
                     running_total += len(df)
-                    dfs.append(df)
-                else:
-                    # Separate sheets: just append Average row, no group column or empty separator
-                    df = pd.concat([df, avg_df], ignore_index=True)
-                    dfs.append(df)  # keep for potential uniform preview handling
-                    default_sheet_bases.append(Path(filename).stem or f'Sheet{i+1}')
-                    per_sheet.append((filename, df))
+                # collect regardless
+                dfs.append(df)
             else:
-                # Even if empty, track default base for naming consistency
-                if output_mode == 'sheets':
-                    default_sheet_bases.append(Path(filename).stem or f'Sheet{i+1}')
-                    per_sheet.append((filename, df))
+                # Separate sheets: append Average row when data exists, no group column or empty separator
+                if n_data > 0:
+                    avg_row: dict[str, Any] = {original_cols[0]: 'Average'}
+                    for c in original_cols[1:]:
+                        numeric = pd.to_numeric(df[c], errors='coerce')
+                        mean_val = numeric.mean()
+                        avg_row[c] = '' if pd.isna(mean_val) else mean_val
+                    avg_df = pd.DataFrame([avg_row], columns=original_cols)
+                    df = pd.concat([df, avg_df], ignore_index=True)
+                dfs.append(df)  # keep for potential uniform preview handling
+                default_sheet_bases.append(Path(filename).stem or f'Sheet{i+1}')
+                per_sheet.append((filename, df))
 
         if output_mode == 'sheets':
             # Sanitize and finalize sheet names

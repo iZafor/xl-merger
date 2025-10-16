@@ -27,7 +27,11 @@ Then open http://127.0.0.1:5000
 Notes
 
 -   Output modes:
-    -   Single sheet (default): concatenates all files row-wise into one sheet named "Merged". You can optionally add a Group column with per-file labels; the first column cells will be merged per labeled group in the Excel output.
+    -   Single sheet (default): concatenates all files row-wise into one sheet named "Merged".
+        -   Column alignment option:
+            -   Match by column names (union): includes all columns seen across files; missing values are left blank.
+            -   Match by position: aligns to the first non-empty file's columns by position, truncating extras and padding missing columns with blanks.
+        -   Optional Group column with per-file labels; the first column cells will be merged per labeled group in the Excel output.
     -   Separate sheets: writes each uploaded file to its own sheet. You can optionally provide sheet names (one per line, in the same order as the files). If left blank, sheet names fall back to the uploaded filename (without extension). Names are sanitized to Excel rules (max 31 chars; cannot contain `: \/ ? * [ ]`). Duplicates are auto-suffixed with " (2)", " (3)", etc.
 -   It reads the first sheet for Excel files.
 -   For large files or different merge logic (join on keys), further development is needed.

@@ -124,6 +124,34 @@
                     </div>
                 </div>
 
+                <div class="mb-3" id="align_mode_block">
+                    <label class="form-label"
+                        >Column alignment (single sheet)</label
+                    >
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio"
+                        name="align_mode" id="align_names" value="names" {{
+                        'checked' if request.form.get('align_mode') == 'names'
+                        else '' }}>
+                        <label for="align_names" class="form-check-label"
+                            >Match by column names (union)</label
+                        >
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio"
+                        name="align_mode" id="align_position" value="position"
+                        {{ 'checked' if request.form.get('align_mode',
+                        'position') == 'position' else '' }}>
+                        <label for="align_position" class="form-check-label"
+                            >Match by position (use first file’s columns)</label
+                        >
+                    </div>
+                    <div class="form-text">
+                        Position mode truncates extra columns and pads missing
+                        ones with blanks to match the first file.
+                    </div>
+                </div>
+
                 <div class="mb-3" id="group_labels_block">
                     <label for="group_texts" class="form-label"
                         >Group labels (optional, one per file in upload
@@ -385,6 +413,10 @@
                     groupLabelsBlock.style.display = sheets ? "none" : "";
                     groupTitleBlock.style.display = sheets ? "none" : "";
                     sheetNamesBlock.style.display = sheets ? "" : "none";
+                    const alignBlock =
+                        document.getElementById("align_mode_block");
+                    if (alignBlock)
+                        alignBlock.style.display = sheets ? "none" : "";
                 }
                 if (modeSingle)
                     modeSingle.addEventListener("change", updateModeUI);
