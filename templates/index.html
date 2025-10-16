@@ -71,6 +71,27 @@
                 class="card shadow-sm p-4"
             >
                 <div class="mb-3">
+                    <label class="form-label">Output mode</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio"
+                        name="output_mode" id="mode_single" value="single" {{
+                        'checked' if request.form.get('output_mode', 'single')
+                        != 'sheets' else '' }}>
+                        <label class="form-check-label" for="mode_single"
+                            >Single sheet (concatenate rows)</label
+                        >
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio"
+                        name="output_mode" id="mode_sheets" value="sheets" {{
+                        'checked' if request.form.get('output_mode') == 'sheets'
+                        else '' }}>
+                        <label class="form-check-label" for="mode_sheets"
+                            >Separate sheets (one per file)</label
+                        >
+                    </div>
+                </div>
+                <div class="mb-3">
                     <label for="files" class="form-label"
                         >Select Excel/CSV files to merge</label
                     >
@@ -103,7 +124,7 @@
                     </div>
                 </div>
 
-                <div class="mb-3">
+                <div class="mb-3" id="group_labels_block">
                     <label for="group_texts" class="form-label"
                         >Group labels (optional, one per file in upload
                         order)</label
@@ -123,7 +144,7 @@
                     </div>
                 </div>
 
-                <div class="mb-3">
+                <div class="mb-3" id="group_title_block">
                     <label for="group_col_title" class="form-label"
                         >Group column title (optional)</label
                     >
@@ -135,6 +156,27 @@
                         placeholder="Default: Group"
                         value="{{ request.form.get('group_col_title', '') }}"
                     />
+                </div>
+
+                <div class="mb-3" id="sheet_names_block" style="display: none">
+                    <label for="sheet_names" class="form-label"
+                        >Sheet names (optional, one per file in upload
+                        order)</label
+                    >
+                    <textarea
+                        class="form-control"
+                        id="sheet_names"
+                        name="sheet_names"
+                        rows="3"
+                        placeholder="Enter one name per line, matching the order of selected files; blank lines fall back to file names"
+                    >
+{{ request.form.get('sheet_names', '') }}</textarea
+                    >
+                    <div class="form-text">
+                        Excel sheet names are limited to 31 characters and
+                        cannot contain : \\ / ? * [ ]. Duplicates will be
+                        auto-suffixed.
+                    </div>
                 </div>
 
                 <div class="d-flex gap-2 align-items-center">
@@ -151,7 +193,25 @@
                 </div>
             </form>
 
-            {% if merged_table %}
+            {% if sheet_previews %}
+            <hr class="my-4" />
+            <h4>Preview: separate sheets</h4>
+            {% for sp in sheet_previews %}
+            <div class="mb-4">
+                <h5 class="mb-2">
+                    {{ sp.name }}
+                    <small class="text-muted"
+                        >({{ sp.rows }} rows × {{ sp.cols }} columns)</small
+                    >
+                </h5>
+                <div
+                    class="table-responsive"
+                    style="max-height: 40vh; overflow: auto"
+                >
+                    {{ sp.html | safe }}
+                </div>
+            </div>
+            {% endfor %} {% elif merged_table %}
             <hr class="my-4" />
             <h4>
                 Merged preview ({{ num_rows }} rows × {{ num_cols }} columns)
@@ -166,8 +226,9 @@
 
             <hr class="my-5" />
             <p class="text-muted">
-                Drag and drop multiple files or use the file dialog. The files
-                will be concatenated row-wise into a single sheet.
+                Drag and drop multiple files or use the file dialog. Choose
+                single sheet to concatenate rows, or separate sheets to keep
+                files on their own sheets.
             </p>
         </div>
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -202,6 +263,15 @@
                 const list = document.getElementById("fileList");
                 const form = document.querySelector('form[method="post"]');
                 const labelsArea = document.getElementById("group_texts");
+                const sheetNamesArea = document.getElementById("sheet_names");
+                const modeSingle = document.getElementById("mode_single");
+                const modeSheets = document.getElementById("mode_sheets");
+                const groupLabelsBlock =
+                    document.getElementById("group_labels_block");
+                const groupTitleBlock =
+                    document.getElementById("group_title_block");
+                const sheetNamesBlock =
+                    document.getElementById("sheet_names_block");
 
                 let currentFiles = [];
                 let dragIndex = null;
@@ -241,7 +311,7 @@
                 fileInput.addEventListener("change", () => {
                     currentFiles = Array.from(fileInput.files);
                     renderList();
-                    updateLabelCountHint();
+                    updateCountHints();
                 });
 
                 form.addEventListener("submit", (e) => {
@@ -259,26 +329,69 @@
                 });
 
                 // Soft hint: highlight helper text if labels count doesn't match files count
-                function updateLabelCountHint() {
-                    if (!labelsArea) return;
-                    const lines = (labelsArea.value || "")
-                        .split(/\r?\n/)
-                        .filter(() => true).length;
-                    const hint =
-                        labelsArea.parentElement.querySelector(".form-text");
-                    if (!hint) return;
-                    if (currentFiles.length && lines !== currentFiles.length) {
-                        hint.classList.add("text-warning");
-                        hint.classList.remove("text-muted");
-                    } else {
-                        hint.classList.remove("text-warning");
-                        hint.classList.add("text-muted");
+                function updateCountHints() {
+                    // Group labels hint (single-sheet mode)
+                    if (labelsArea) {
+                        const lines = (labelsArea.value || "")
+                            .split(/\r?\n/)
+                            .filter(() => true).length;
+                        const hint =
+                            labelsArea.parentElement.querySelector(
+                                ".form-text"
+                            );
+                        if (hint) {
+                            if (
+                                currentFiles.length &&
+                                lines !== currentFiles.length
+                            ) {
+                                hint.classList.add("text-warning");
+                                hint.classList.remove("text-muted");
+                            } else {
+                                hint.classList.remove("text-warning");
+                                hint.classList.add("text-muted");
+                            }
+                        }
+                    }
+                    // Sheet names hint
+                    if (sheetNamesArea) {
+                        const lines = (sheetNamesArea.value || "")
+                            .split(/\r?\n/)
+                            .filter(() => true).length;
+                        const hint =
+                            sheetNamesArea.parentElement.querySelector(
+                                ".form-text"
+                            );
+                        if (hint) {
+                            if (
+                                currentFiles.length &&
+                                lines !== currentFiles.length
+                            ) {
+                                hint.classList.add("text-warning");
+                                hint.classList.remove("text-muted");
+                            } else {
+                                hint.classList.remove("text-warning");
+                                hint.classList.add("text-muted");
+                            }
+                        }
                     }
                 }
-                if (labelsArea) {
-                    labelsArea.addEventListener("input", updateLabelCountHint);
+                if (labelsArea)
+                    labelsArea.addEventListener("input", updateCountHints);
+                if (sheetNamesArea)
+                    sheetNamesArea.addEventListener("input", updateCountHints);
+
+                function updateModeUI() {
+                    const sheets = modeSheets && modeSheets.checked;
+                    groupLabelsBlock.style.display = sheets ? "none" : "";
+                    groupTitleBlock.style.display = sheets ? "none" : "";
+                    sheetNamesBlock.style.display = sheets ? "" : "none";
                 }
-                updateLabelCountHint();
+                if (modeSingle)
+                    modeSingle.addEventListener("change", updateModeUI);
+                if (modeSheets)
+                    modeSheets.addEventListener("change", updateModeUI);
+                updateModeUI();
+                updateCountHints();
             })();
         </script>
     </body>

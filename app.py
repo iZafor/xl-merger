@@ -7,6 +7,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from werkzeug.utils import secure_filename
 from openpyxl import load_workbook
+from typing import Any
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET', 'devsecret')
@@ -73,27 +74,72 @@ def index():
             flash('No selected files')
             return redirect(request.url)
 
-        # Parse per-file labels and custom column title
+        # Output mode: 'single' (default) or 'sheets'
+        output_mode = (request.form.get('output_mode') or 'single').strip()
+
+        # Parse per-file labels and custom column title (single-sheet mode only)
         raw_labels = request.form.get('group_texts', '')
         labels = [l.strip() for l in raw_labels.splitlines()] if raw_labels else []
         group_col_title = (request.form.get('group_col_title') or '').strip() or 'Group'
-        use_group_col = any(bool(l) for l in labels)
+        use_group_col = (output_mode != 'sheets') and any(bool(l) for l in labels)
+
+        # Parse optional sheet names (separate-sheets mode only)
+        raw_names = request.form.get('sheet_names', '') if output_mode == 'sheets' else ''
+        requested_names = [n.strip() for n in raw_names.splitlines()] if raw_names else []
+
+        def sanitize_sheet_names(default_bases: list[str]) -> list[str]:
+            r"""Return sanitized, unique Excel sheet names.
+
+            - limit to 31 chars
+            - remove invalid chars : \\ / ? * [ ]
+            - trim quotes and spaces; avoid empty by falling back to defaults
+            - ensure uniqueness by appending (2), (3), ...
+            """
+            invalid_chars = set(':\\/?*[]')
+            used: set[str] = set()
+            result: list[str] = []
+            for i, base in enumerate(default_bases):
+                raw = (requested_names[i] if i < len(requested_names) and requested_names[i] else base)
+                # remove invalid characters
+                cleaned = ''.join(ch for ch in raw if ch not in invalid_chars)
+                cleaned = cleaned.strip().strip("'")
+                if not cleaned:
+                    cleaned = base or f'Sheet{i+1}'
+                # limit to 31 characters
+                cleaned = cleaned[:31]
+                # enforce uniqueness
+                base_clean = cleaned
+                n = 2
+                while cleaned in used or not cleaned:
+                    suffix = f' ({n})'
+                    max_base_len = 31 - len(suffix)
+                    trimmed = base_clean[:max_base_len].rstrip()
+                    cleaned = f"{trimmed}{suffix}" if trimmed else f"Sheet{i+1}{suffix}"
+                    n += 1
+                used.add(cleaned)
+                result.append(cleaned)
+            return result
 
         dfs = []
         merge_ranges = []  # tuples of (start_idx, end_idx) for data rows per file in merged DF (0-based)
         running_total = 0
 
+        # For separate sheets, collect (name, df) pairs
+        per_sheet: list[tuple[str, pd.DataFrame]] = []
+        default_sheet_bases: list[str] = []
+
         for i, file in enumerate(files):
-            if not (file and allowed_file(file.filename)):
+            raw_fn = (getattr(file, 'filename', '') or '')
+            filename = secure_filename(raw_fn)
+            if not (file and allowed_file(filename)):
                 flash(f'File not allowed: {getattr(file, "filename", "")}')
                 return redirect(request.url)
 
-            filename = secure_filename(file.filename)
             try:
                 if filename.lower().endswith('.csv'):
-                    df = pd.read_csv(file)
+                    df = pd.read_csv(file.stream)
                 else:
-                    df = pd.read_excel(file)
+                    df = pd.read_excel(file.stream)
             except Exception as e:
                 flash(f'Error reading {filename}: {e}')
                 return redirect(request.url)
@@ -103,41 +149,80 @@ def index():
 
             if n_data > 0:
                 # Build Average row using original columns
-                avg_row = {original_cols[0]: 'Average'}
+                avg_row: dict[str, Any] = {original_cols[0]: 'Average'}
                 for c in original_cols[1:]:
                     numeric = pd.to_numeric(df[c], errors='coerce')
                     mean_val = numeric.mean()
                     avg_row[c] = '' if pd.isna(mean_val) else mean_val
                 avg_df = pd.DataFrame([avg_row], columns=original_cols)
 
-                # Insert group column if needed (always insert to keep columns aligned across files)
-                if use_group_col:
-                    label = labels[i] if i < len(labels) else ''
-                    df.insert(0, group_col_title, label)
-                    avg_df.insert(0, group_col_title, '')
-                    cols_after = [group_col_title] + original_cols
-                else:
-                    cols_after = original_cols
+                if output_mode == 'single':
+                    # Insert group column if needed (always insert to keep columns aligned across files)
+                    if use_group_col:
+                        label = labels[i] if i < len(labels) else ''
+                        df.insert(0, group_col_title, label)
+                        avg_df.insert(0, group_col_title, '')
+                        cols_after = [group_col_title] + original_cols
+                    else:
+                        cols_after = original_cols
 
-                # Record merge range for this file's data rows if it has a label
-                if use_group_col and (labels[i] if i < len(labels) else '') and n_data > 0:
-                    start_idx = running_total
-                    end_idx = running_total + n_data - 1
-                    merge_ranges.append((start_idx, end_idx))
+                    # Record merge range for this file's data rows if it has a label
+                    if use_group_col and (labels[i] if i < len(labels) else '') and n_data > 0:
+                        start_idx = running_total
+                        end_idx = running_total + n_data - 1
+                        merge_ranges.append((start_idx, end_idx))
 
-                # Append Average and optional empty row (not after last file)
-                if i < len(files) - 1:
-                    empty_row = {c: '' for c in cols_after}
-                    empty_df = pd.DataFrame([empty_row], columns=cols_after)
-                    df = pd.concat([df, avg_df, empty_df], ignore_index=True)
+                    # Append Average and optional empty row (not after last file)
+                    if i < len(files) - 1:
+                        empty_row = {c: '' for c in cols_after}
+                        empty_df = pd.DataFrame([empty_row], columns=cols_after)
+                        df = pd.concat([df, avg_df, empty_df], ignore_index=True)
+                    else:
+                        df = pd.concat([df, avg_df], ignore_index=True)
+
+                    running_total += len(df)
+                    dfs.append(df)
                 else:
+                    # Separate sheets: just append Average row, no group column or empty separator
                     df = pd.concat([df, avg_df], ignore_index=True)
+                    dfs.append(df)  # keep for potential uniform preview handling
+                    default_sheet_bases.append(Path(filename).stem or f'Sheet{i+1}')
+                    per_sheet.append((filename, df))
+            else:
+                # Even if empty, track default base for naming consistency
+                if output_mode == 'sheets':
+                    default_sheet_bases.append(Path(filename).stem or f'Sheet{i+1}')
+                    per_sheet.append((filename, df))
 
-                running_total += len(df)
+        if output_mode == 'sheets':
+            # Sanitize and finalize sheet names
+            sheet_names = sanitize_sheet_names(default_sheet_bases)
 
-            dfs.append(df)
+            # Write to Excel with multiple sheets
+            unique_name = f'merged-{uuid.uuid4().hex}.xlsx'
+            out_path = TMP_DIR / unique_name
+            try:
+                with pd.ExcelWriter(out_path, engine='openpyxl') as writer:
+                    for idx, (_, df) in enumerate(per_sheet):
+                        df.to_excel(writer, index=False, sheet_name=sheet_names[idx])
+            except Exception as e:
+                flash(f'Error writing output file: {e}')
+                return redirect(request.url)
 
-        # Merge all
+            # Build previews
+            sheet_previews = []
+            for idx, (_, df) in enumerate(per_sheet):
+                html = df.to_html(classes='table table-striped table-sm', index=False, escape=False)
+                sheet_previews.append({
+                    'name': sheet_names[idx],
+                    'html': html,
+                    'rows': len(df),
+                    'cols': len(df.columns)
+                })
+
+            return render_template('index.html', sheet_previews=sheet_previews, download_filename=unique_name)
+
+        # Single-sheet mode: merge all
         try:
             merged = pd.concat(dfs, ignore_index=True)
         except Exception as e:
@@ -154,7 +239,7 @@ def index():
             flash(f'Error writing output file: {e}')
             return redirect(request.url)
 
-        # Merge first column cells for labeled ranges
+        # Merge first column cells for labeled ranges (single-sheet only)
         if use_group_col and merge_ranges:
             try:
                 wb = load_workbook(out_path)
