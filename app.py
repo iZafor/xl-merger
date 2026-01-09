@@ -3,8 +3,8 @@ import pandas as pd
 import os
 import uuid
 import time
+import signal
 from pathlib import Path
-from datetime import datetime, timezone
 from werkzeug.utils import secure_filename
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Alignment, PatternFill
@@ -23,6 +23,7 @@ TMP_DIR.mkdir(exist_ok=True)
 TMP_RETENTION_SECONDS = int(os.environ.get('TMP_RETENTION_SECONDS', str(6 * 60 * 60)))  # default: 6 hours
 TMP_CLEANUP_INTERVAL_SECONDS = int(os.environ.get('TMP_CLEANUP_INTERVAL_SECONDS', str(30 * 60)))  # default: 30 minutes
 _LAST_TMP_CLEANUP = 0.0
+_SHUTDOWN_CLEANUP_DONE = False
 
 
 def allowed_file(filename: str) -> bool:
@@ -54,6 +55,46 @@ def cleanup_tmp_dir(now: float | None = None) -> int:
     if deleted:
         app.logger.info(f"tmp cleanup removed {deleted} old file(s)")
     return deleted
+
+
+def cleanup_all_tmp_files() -> int:
+    """Delete all files in TMP_DIR regardless of age.
+    
+    Returns number of files deleted.
+    """
+    global _SHUTDOWN_CLEANUP_DONE
+    
+    if _SHUTDOWN_CLEANUP_DONE:
+        return 0
+    
+    _SHUTDOWN_CLEANUP_DONE = True
+    print("\nServer shutting down, cleaning up tmp directory...")
+    
+    deleted = 0
+    try:
+        for p in TMP_DIR.glob('*.xlsx'):
+            try:
+                p.unlink(missing_ok=True)
+                deleted += 1
+            except Exception as e:
+                print(f"Could not delete tmp file {p}: {e}")
+    except Exception as e:
+        print(f"tmp cleanup scan failed: {e}")
+    if deleted:
+        print(f"Shutdown cleanup removed {deleted} file(s)")
+    return deleted
+
+
+def shutdown_handler(signum, frame):
+    """Cleanup handler called on server shutdown."""
+    cleanup_all_tmp_files()
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+
+
+if os.environ.get('WERKZEUG_RUN_MAIN') == 'true' or not app.debug:
+    signal.signal(signal.SIGINT, shutdown_handler)
+    signal.signal(signal.SIGTERM, shutdown_handler)
 
 
 @app.before_request
