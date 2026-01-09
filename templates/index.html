@@ -11,6 +11,7 @@
         <style>
             body {
                 background-color: #f6f8fb;
+                transition: background-color 0.3s ease, color 0.3s ease;
             }
             .container {
                 max-width: 960px;
@@ -37,12 +38,216 @@
                 padding: 0.5rem 0.75rem;
                 border-color: #dee2e6;
             }
+
+            /* Dark mode styles */
+            [data-theme="dark"] {
+                color-scheme: dark;
+            }
+
+            [data-theme="dark"] body {
+                background-color: #1a1d23;
+                color: #e8e9ed;
+            }
+
+            [data-theme="dark"] .bg-light {
+                background-color: #1a1d23 !important;
+            }
+
+            [data-theme="dark"] .navbar {
+                background-color: #2d3139 !important;
+                border-color: #3d4149 !important;
+            }
+
+            [data-theme="dark"] .card {
+                background-color: #2d3139;
+                color: #e8e9ed;
+                border-color: #3d4149;
+            }
+
+            [data-theme="dark"] .form-control,
+            [data-theme="dark"] .form-select {
+                background-color: #1a1d23;
+                color: #e8e9ed;
+                border-color: #3d4149;
+            }
+
+            [data-theme="dark"] .form-control::placeholder {
+                color: #6c757d;
+                opacity: 1;
+            }
+
+            [data-theme="dark"] .form-control:focus,
+            [data-theme="dark"] .form-select:focus {
+                background-color: #1a1d23;
+                color: #e8e9ed;
+                border-color: #5a8dee;
+                box-shadow: 0 0 0 0.25rem rgba(90, 141, 238, 0.25);
+            }
+
+            [data-theme="dark"] .form-label,
+            [data-theme="dark"] .form-check-label {
+                color: #e8e9ed;
+            }
+
+            [data-theme="dark"] .form-text {
+                color: #a8aab3;
+            }
+
+            [data-theme="dark"] .navbar-brand {
+                color: #e8e9ed !important;
+            }
+
+            [data-theme="dark"] .list-group-item {
+                background-color: #2d3139;
+                color: #e8e9ed;
+                border-color: #3d4149;
+            }
+
+            [data-theme="dark"] .separator-row td {
+                background-color: #1a1d23 !important;
+                color: #6c757d !important;
+            }
+
+            [data-theme="dark"] .avg-row {
+                background-color: #4a3f1f !important;
+            }
+
+            [data-theme="dark"] .avg-row td {
+                background-color: #4a3f1f !important;
+                color: #ffc107 !important;
+            }
+
+            [data-theme="dark"] table.dataframe th,
+            [data-theme="dark"] table.dataframe td {
+                border-color: #3d4149;
+                color: #e8e9ed !important;
+                background-color: transparent;
+            }
+
+            [data-theme="dark"] table.dataframe thead th {
+                background-color: #252830 !important;
+                color: #e8e9ed !important;
+            }
+
+            [data-theme="dark"] table.dataframe tbody tr:nth-of-type(odd) {
+                background-color: #2d3139 !important;
+            }
+
+            [data-theme="dark"] table.dataframe tbody tr:nth-of-type(even) {
+                background-color: #252830 !important;
+            }
+
+            [data-theme="dark"] table.dataframe tbody tr:nth-of-type(odd) td {
+                background-color: #2d3139 !important;
+                color: #e8e9ed !important;
+            }
+
+            [data-theme="dark"] table.dataframe tbody tr:nth-of-type(even) td {
+                background-color: #252830 !important;
+                color: #e8e9ed !important;
+            }
+
+            [data-theme="dark"] .table-responsive {
+                background-color: #2d3139;
+            }
+
+            [data-theme="dark"] table {
+                color: #e8e9ed;
+            }
+
+            [data-theme="dark"] table thead th {
+                background-color: #252830;
+                color: #e8e9ed !important;
+                border-color: #3d4149;
+            }
+
+            [data-theme="dark"] table tbody td {
+                color: #e8e9ed !important;
+                border-color: #3d4149;
+            }
+
+            [data-theme="dark"] .text-muted {
+                color: #a8aab3 !important;
+            }
+
+            [data-theme="dark"] .alert-warning {
+                background-color: #4a3f1f;
+                color: #ffc107;
+                border-color: #6a5f3f;
+            }
+
+            [data-theme="dark"] .alert-warning .btn-close {
+                filter: invert(1) grayscale(100%) brightness(200%);
+            }
+
+            [data-theme="dark"] h1,
+            [data-theme="dark"] h2,
+            [data-theme="dark"] h3,
+            [data-theme="dark"] h4,
+            [data-theme="dark"] h5,
+            [data-theme="dark"] h6 {
+                color: #e8e9ed;
+            }
+
+            [data-theme="dark"] .btn-primary {
+                background-color: #5a8dee;
+                border-color: #5a8dee;
+                color: #fff;
+            }
+
+            [data-theme="dark"] .btn-primary:hover {
+                background-color: #4a7dde;
+                border-color: #4a7dde;
+            }
+
+            [data-theme="dark"] .btn-success {
+                background-color: #28a745;
+                border-color: #28a745;
+                color: #fff;
+            }
+
+            [data-theme="dark"] .btn-success:hover {
+                background-color: #218838;
+                border-color: #218838;
+            }
+
+            [data-theme="dark"] small,
+            [data-theme="dark"] .small {
+                color: #a8aab3;
+            }
+
+            [data-theme="dark"] hr {
+                border-color: #3d4149;
+                opacity: 1;
+            }
+
+            /* Theme toggle button */
+            .theme-toggle {
+                background: none;
+                border: none;
+                font-size: 1.25rem;
+                cursor: pointer;
+                padding: 0.25rem 0.5rem;
+                color: inherit;
+                transition: opacity 0.2s;
+            }
+
+            .theme-toggle:hover {
+                opacity: 0.7;
+            }
         </style>
     </head>
     <body class="bg-light">
         <nav class="navbar bg-white border-bottom mb-4">
             <div class="container">
                 <span class="navbar-brand mb-0 h1">Excel Merger</span>
+                <button
+                    class="theme-toggle"
+                    id="themeToggle"
+                    aria-label="Toggle dark mode"
+                >
+                    <span class="theme-icon">🌙</span>
+                </button>
             </div>
         </nav>
         <div class="container py-5">
@@ -277,6 +482,30 @@
         </div>
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
         <script>
+            // Dark mode toggle
+            (function initTheme() {
+                const themeToggle = document.getElementById("themeToggle");
+                const themeIcon = themeToggle.querySelector(".theme-icon");
+                const html = document.documentElement;
+
+                // Check for saved theme preference or default to light mode
+                const currentTheme = localStorage.getItem("theme") || "light";
+                html.setAttribute("data-theme", currentTheme);
+                updateIcon(currentTheme);
+
+                themeToggle.addEventListener("click", () => {
+                    const theme = html.getAttribute("data-theme");
+                    const newTheme = theme === "light" ? "dark" : "light";
+                    html.setAttribute("data-theme", newTheme);
+                    localStorage.setItem("theme", newTheme);
+                    updateIcon(newTheme);
+                });
+
+                function updateIcon(theme) {
+                    themeIcon.textContent = theme === "light" ? "🌙" : "☀️";
+                }
+            })();
+
             // Highlight Average and separator rows within the preview (client-side only)
             (function highlightPreview() {
                 const table = document.querySelector("table.dataframe");
